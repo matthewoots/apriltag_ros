@@ -131,7 +131,9 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     cb_parameter(add_on_set_parameters_callback(std::bind(&AprilTagNode::onParameter, this, std::placeholders::_1))),
     td(apriltag_detector_create()),
     // topics
-    sub_cam(image_transport::create_camera_subscription(this, "image_rect", std::bind(&AprilTagNode::onCamera, this, std::placeholders::_1, std::placeholders::_2), declare_parameter("image_transport", "raw", descr({}, true)), rmw_qos_profile_sensor_data)),
+    sub_cam(image_transport::create_camera_subscription(this, "image_rect", 
+        std::bind(&AprilTagNode::onCamera, this, std::placeholders::_1, std::placeholders::_2), 
+        declare_parameter("image_transport", "raw", descr({}, true)), rmw_qos_profile_sensor_data)),
     pub_detections(create_publisher<apriltag_msgs::msg::AprilTagDetectionArray>("detections", rclcpp::QoS(1))),
     tf_broadcaster(this)
 {
@@ -235,16 +237,24 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
         msg_detection.centre.y = det->c[1];
         std::memcpy(msg_detection.corners.data(), det->p, sizeof(double) * 8);
         std::memcpy(msg_detection.homography.data(), det->H->data, sizeof(double) * 9);
+        geometry_msgs::msg::Transform transform;
+        getPose(*(det->H), Pinv, transform, tag_sizes.count(det->id) ? tag_sizes.at(det->id) : tag_edge_size);
+        msg_detection.pose.pose.position.x = transform.translation.x;
+        msg_detection.pose.pose.position.y = transform.translation.y;
+        msg_detection.pose.pose.position.z = transform.translation.z;
+
+        msg_detection.pose.pose.orientation = transform.rotation;
+
         msg_detections.detections.push_back(msg_detection);
 
         // 3D orientation and position
-        geometry_msgs::msg::TransformStamped tf;
-        tf.header = msg_img->header;
+        // geometry_msgs::msg::TransformStamped tf;
+        // tf.header = msg_img->header;
         // set child frame name by generic tag name or configured tag name
-        tf.child_frame_id = tag_frames.count(det->id) ? tag_frames.at(det->id) : std::string(det->family->name) + ":" + std::to_string(det->id);
-        getPose(*(det->H), Pinv, tf.transform, tag_sizes.count(det->id) ? tag_sizes.at(det->id) : tag_edge_size);
+        // tf.child_frame_id = tag_frames.count(det->id) ? tag_frames.at(det->id) : std::string(det->family->name) + ":" + std::to_string(det->id);
+        // getPose(*(det->H), Pinv, tf.transform, tag_sizes.count(det->id) ? tag_sizes.at(det->id) : tag_edge_size);
 
-        tfs.push_back(tf);
+        // tfs.push_back(tf);
     }
 
     pub_detections->publish(msg_detections);

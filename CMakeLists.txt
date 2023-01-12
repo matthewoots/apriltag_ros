@@ -42,6 +42,8 @@ find_package(cv_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(apriltag 3.2 REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+find_package(ament_cmake REQUIRED)
 
 add_library(tags OBJECT src/tag_functions.cpp)
 target_link_libraries(tags apriltag::apriltag)
@@ -59,9 +61,23 @@ install(TARGETS AprilTagNode
     LIBRARY DESTINATION lib
 )
 
-install(DIRECTORY cfg/ DESTINATION share/${PROJECT_NAME}/cfg)
+# Install Python executables
+install(PROGRAMS
+  scripts/cf_opencv_publisher.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+# Install launch and config files.
+install(DIRECTORY
+  calibration
+  src
+  launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# install(DIRECTORY cfg/ DESTINATION share/${PROJECT_NAME}/cfg)
+
+# install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
