@@ -13,9 +13,15 @@
 // apriltag
 #include "tag_functions.hpp"
 #include <apriltag.h>
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/opencv.hpp>
+
+#include "common/homography.h"
 
 #include <Eigen/Dense>
 
+typedef cv::Vec<float, 5> Vec5f;
 
 #define IF(N, V) \
     if(assign_check(parameter, N, V)) continue;
@@ -90,6 +96,84 @@ void getPose(const matd_t& H,
     t.rotation.z = q.z();
 }
 
+Eigen::Matrix4d getRelativeTransform(
+  std::vector<cv::Point3d> objectPoints, std::vector<cv::Point2d> imagePoints,
+  cv::Matx33d cameraMatrix, Vec5f distCoeffs)
+{
+  // perform Perspective-n-Point camera pose estimation using the
+  // above 3D-2D point correspondences
+  cv::Mat rvec, tvec;
+  
+//   cv::Vecf distCoeffs(0, 0, 0, 0);  // distortion coefficients
+  // TODO(H-HChen) Perhaps something like SOLVEPNP_EPNP would be faster? Would
+  // need to first check WHAT is a bottleneck in this code, and only
+  // do this if PnP solution is the bottleneck.
+  cv::solvePnP(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec);
+  cv::Matx33d R;
+  cv::Rodrigues(rvec, R);
+  Eigen::Matrix3d wRo;
+
+//   if (z_up) {
+    wRo << R(1, 0), R(1, 1), R(1, 2), R(2, 0), R(2, 1), R(2, 2), R(0, 0), R(0, 1), R(0, 2);
+//   } else {
+//     wRo << R(0, 0), R(0, 1), R(0, 2), R(1, 0), R(1, 1), R(1, 2), R(2, 0), R(2, 1), R(2, 2);
+//   }
+
+  Eigen::Matrix4d T;  // homogeneous transformation matrix
+  T.topLeftCorner(3, 3) = wRo;
+  T.col(3).head(3) << tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2);
+  T.row(3) << 0, 0, 0, 1;
+  return T;
+}
+
+void addObjectPoints(
+  double s, cv::Matx44d T_oi, std::vector<cv::Point3d> & objectPoints)
+{
+    // Add to object point vector the tag corner coordinates in the bundle frame
+    // Going counterclockwise starting from the bottom left corner
+    objectPoints.push_back(T_oi.get_minor<3, 4>(0, 0) * cv::Vec4d(-s, -s, 0, 1));
+    objectPoints.push_back(T_oi.get_minor<3, 4>(0, 0) * cv::Vec4d(s, -s, 0, 1));
+    objectPoints.push_back(T_oi.get_minor<3, 4>(0, 0) * cv::Vec4d(s, s, 0, 1));
+    objectPoints.push_back(T_oi.get_minor<3, 4>(0, 0) * cv::Vec4d(-s, s, 0, 1));
+}
+
+void addImagePoints(
+  apriltag_detection_t * detection, std::vector<cv::Point2d> & imagePoints)
+{
+    // Add to image point vector the tag corners in the image frame
+    // Going counterclockwise starting from the bottom left corner
+    double tag_x[4] = {-1, 1, 1, -1};
+    double tag_y[4] = {1, 1, -1, -1};  // Negated because AprilTag tag local
+                                        // frame has y-axis pointing DOWN
+                                        // while we use the tag local frame
+                                        // with y-axis pointing UP
+    for (int i = 0; i < 4; i++) {
+        // Homography projection taking tag local frame coordinates to image pixels
+        double im_x, im_y;
+        homography_project(detection->H, tag_x[i], tag_y[i], &im_x, &im_y);
+        imagePoints.push_back(cv::Point2d(im_x, im_y));
+    }
+}
+
+geometry_msgs::msg::TransformStamped makeTagPose(
+  const Eigen::Matrix4d & transform, const Eigen::Quaternion<double> rot_quaternion,
+  const std_msgs::msg::Header & header)
+{
+    geometry_msgs::msg::TransformStamped tf_;
+    tf_.header = header;
+    //===== Position and orientation
+    tf_.transform.translation.x = transform(0, 3);
+    tf_.transform.translation.y = transform(1, 3);
+    tf_.transform.translation.z = transform(2, 3);
+
+    tf_.transform.rotation.x = rot_quaternion.z();
+    tf_.transform.rotation.y = rot_quaternion.x();
+    tf_.transform.rotation.z = rot_quaternion.y();
+
+    tf_.transform.rotation.w = rot_quaternion.w();
+    return tf_;
+}
+
 
 class AprilTagNode : public rclcpp::Node {
 public:
@@ -138,8 +222,11 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     tf_broadcaster(this)
 {
     // read-only parameters
-    const std::string tag_family = declare_parameter("family", "36h11", descr("tag family", true));
+    std::string tag_family = declare_parameter("family", "36h11", descr("tag family", true));
     tag_edge_size = declare_parameter("size", 1.0, descr("default tag size", true));
+
+    tag_family = this->get_parameter("family").get_parameter_value().get<std::string>();
+    tag_edge_size = this->get_parameter("size").get_parameter_value().get<double>();
 
     // get tag names, IDs and sizes
     const auto ids = declare_parameter("tag.ids", std::vector<int64_t>{}, descr("tag ids", true));
@@ -192,7 +279,16 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
                             const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg_ci)
 {
     // precompute inverse projection matrix
-    const Mat3 Pinv = Eigen::Map<const Eigen::Matrix<double, 3, 4, Eigen::RowMajor>>(msg_ci->p.data()).leftCols<3>().inverse();
+    // const Mat3 Pinv = Eigen::Map<const Eigen::Matrix<double, 3, 4, Eigen::RowMajor>>(msg_ci->p.data()).leftCols<3>().inverse();
+    // cv::Matx33d cameraMatrix(fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    cv::Matx33d cameraMatrix(
+        msg_ci->k[0], 0, msg_ci->k[2], 
+        0, msg_ci->k[4], msg_ci->k[5], 
+        0, 0, 1);
+
+    Vec5f distCoeffs(
+        msg_ci->d[0], msg_ci->d[1], msg_ci->d[2], msg_ci->d[3], msg_ci->d[4]
+    );
 
     // convert to 8bit monochrome image
     const cv::Mat img_uint8 = cv_bridge::toCvShare(msg_img, "mono8")->image;
@@ -214,18 +310,25 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
 
     for(int i = 0; i < zarray_size(detections); i++) {
         apriltag_detection_t* det;
-        zarray_get(detections, i, &det);
-
-        RCLCPP_DEBUG(get_logger(),
-                     "detection %3d: id (%2dx%2d)-%-4d, hamming %d, margin %8.3f\n",
-                     i, det->family->nbits, det->family->h, det->id,
-                     det->hamming, det->decision_margin);
+        zarray_get(detections, i, &det);        
 
         // ignore untracked tags
         if(!tag_frames.empty() && !tag_frames.count(det->id)) { continue; }
 
         // reject detections with more corrected bits than allowed
         if(det->hamming > max_hamming) { continue; }
+
+        std::vector<cv::Point3d> standaloneTagObjectPoints;
+        std::vector<cv::Point2d> standaloneTagImagePoints;
+        double tag_half_size = tag_edge_size / 2.0;
+        addObjectPoints(tag_half_size, cv::Matx44d::eye(), standaloneTagObjectPoints);
+        addImagePoints(det, standaloneTagImagePoints);
+
+        // RCLCPP_DEBUG(get_logger(),
+        //     "detection %3d: id (%2dx%2d)-%-4d, hamming %d, margin %8.3f camera_matrix %.2lf %.2lf %.2lf %.2lf tag_size %lf\n",
+        //     i, det->family->nbits, det->family->h, det->id,
+        //     det->hamming, det->decision_margin, msg_ci->k[0], 
+        //     msg_ci->k[2], msg_ci->k[4], msg_ci->k[5], tag_half_size);
 
         // detection
         apriltag_msgs::msg::AprilTagDetection msg_detection;
@@ -235,15 +338,37 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
         msg_detection.decision_margin = det->decision_margin;
         msg_detection.centre.x = det->c[0];
         msg_detection.centre.y = det->c[1];
+        msg_detection.size = tag_edge_size;
         std::memcpy(msg_detection.corners.data(), det->p, sizeof(double) * 8);
         std::memcpy(msg_detection.homography.data(), det->H->data, sizeof(double) * 9);
-        geometry_msgs::msg::Transform transform;
-        getPose(*(det->H), Pinv, transform, tag_sizes.count(det->id) ? tag_sizes.at(det->id) : tag_edge_size);
-        msg_detection.pose.pose.position.x = transform.translation.x;
-        msg_detection.pose.pose.position.y = transform.translation.y;
-        msg_detection.pose.pose.position.z = transform.translation.z;
+        
+        Eigen::Matrix4d transform;
+        transform = getRelativeTransform(
+            standaloneTagObjectPoints, standaloneTagImagePoints, 
+            cameraMatrix, distCoeffs);
+        Eigen::Matrix3d rot = transform.block(0, 0, 3, 3);
+        Eigen::Quaternion<double> rot_quaternion(rot);
+        geometry_msgs::msg::TransformStamped tag_pose =
+            makeTagPose(transform, rot_quaternion, msg_img->header);
 
-        msg_detection.pose.pose.orientation = transform.rotation;
+        msg_detection.pose.pose.position.x = transform(0, 3);
+        msg_detection.pose.pose.position.y = transform(1, 3);
+        msg_detection.pose.pose.position.z = transform(2, 3);
+
+        msg_detection.pose.pose.orientation = tag_pose.transform.rotation;
+
+        RCLCPP_INFO(get_logger(), "tag %d, pose (%.3lf, %.3lf, %.3lf)", det->id, transform(0, 3), transform(1, 3), transform(2, 3));
+
+        // geometry_msgs::msg::Transform transform;
+        // getPose(*(det->H), Pinv, 
+        //     transform, tag_sizes.count(det->id) ? 
+        //     tag_sizes.at(det->id) : tag_edge_size);
+        
+        // msg_detection.pose.pose.position.x = transform.translation.x;
+        // msg_detection.pose.pose.position.y = transform.translation.y;
+        // msg_detection.pose.pose.position.z = transform.translation.z;
+
+        // msg_detection.pose.pose.orientation = transform.rotation;
 
         msg_detections.detections.push_back(msg_detection);
 

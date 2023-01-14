@@ -21,9 +21,9 @@ class cf_image_publisher(Node):
         )
         # Turn ROS parameters into a dictionary
         self._ros_parameters = self._param_to_dict(self._parameters)
-        name = self._ros_parameters['camera_name']
-        self.publisher_ = self.create_publisher(Image, name + '/image', 10)
-        self.publisher_info = self.create_publisher(CameraInfo, name + '/camera_info', 10)
+        self.name = self._ros_parameters['camera_name']
+        self.publisher_ = self.create_publisher(Image, self.name + '/image', 10)
+        self.publisher_info = self.create_publisher(CameraInfo, self.name + '/camera_info', 10)
 
     def _param_to_dict(self, param_ros):
         """
@@ -51,8 +51,8 @@ def main(args=None):
     minimal_publisher = cf_image_publisher()
     bridge = CvBridge()
 
-    ip = minimal_publisher._ros_parameters['ip_add']
-    port = minimal_publisher._ros_parameters['port']
+    ip = minimal_publisher._ros_parameters['robots'][minimal_publisher.name]['ip_add']
+    port = minimal_publisher._ros_parameters['robots'][minimal_publisher.name]['port']
 
     minimal_publisher.get_logger().info("Connecting to socket on " + ip + ":" + str(port))
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -90,7 +90,7 @@ def main(args=None):
         imgHeader = rx_bytes(length - 2, client_socket)
         [magic, width, height, depth, format, size] = struct.unpack('<BHHBBI', imgHeader)
 
-        # cam_info.header.stamp = minimal_publisher.get_clock().now()
+        cam_info.header.stamp = minimal_publisher.get_clock().now().to_msg()
         minimal_publisher.publisher_info.publish(cam_info)
 
         if magic == 0xBC:
@@ -111,28 +111,15 @@ def main(args=None):
             
             count = count + 1
             meanTimePerImage = (time.time()-start) / count
-            minimal_publisher.get_logger().info("meanTimePerImage " + str(meanTimePerImage))
+            # minimal_publisher.get_logger().info("meanTimePerImage " + str(meanTimePerImage))
             # print("{}".format(1/meanTimePerImage))
 
             # if format == 0:
             bayer_img = np.frombuffer(imgStream, dtype=np.uint8)   
-            bayer_img.shape = (244, 324)
+            bayer_img.shape = (324, 324)
             cv_image = bridge.cv2_to_imgmsg(bayer_img, 'mono8')
-            # cv_image.header.stamp = minimal_publisher.get_clock().now()
+            cv_image.header.stamp = cam_info.header.stamp
             minimal_publisher.publisher_.publish(cv_image)
-                # cv2.imshow('Raw', bayer_img)
-                # cv2.imshow('Color', color_img)
-                # if args.save:
-                #     cv2.imwrite(f"stream_out/raw/img_{count:06d}.png", bayer_img)
-                #     cv2.imwrite(f"stream_out/debayer/img_{count:06d}.png", color_img)
-                # cv2.waitKey(1)
-            # else:
-            #     with open("img.jpeg", "wb") as f:
-            #         f.write(imgStream)
-            #     nparr = np.frombuffer(imgStream, np.uint8)
-            #     decoded = cv2.imdecode(nparr,cv2.IMREAD_UNCHANGED)
-            #     cv2.imshow('JPEG', decoded)
-            #     cv2.waitKey(1)
 
 if __name__ == "__main__":
     main()

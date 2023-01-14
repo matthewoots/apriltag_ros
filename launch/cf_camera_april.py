@@ -17,6 +17,15 @@ def generate_launch_description():
     
     with open(calibration_yaml, 'r') as ymlfile:
         calibration = yaml.safe_load(ymlfile)
+
+    # load ip and port from crazyflie
+    crazyflies_yaml = os.path.join(
+        get_package_share_directory('crazyflie'),
+        'config',
+        'crazyflies.yaml')
+    
+    with open(crazyflies_yaml, 'r') as ymlfile:
+        crazyflies = yaml.safe_load(ymlfile)
     
     # load apriltag
     cfg_yaml = os.path.join(
@@ -26,7 +35,7 @@ def generate_launch_description():
     with open(cfg_yaml, 'r') as ymlfile:
         cfg = yaml.safe_load(ymlfile)
 
-    calib_params = [calibration]
+    calib_params = [calibration] + [crazyflies]
     cfg_params = [cfg]
 
     return LaunchDescription([
@@ -46,6 +55,10 @@ def generate_launch_description():
                 ('image_rect', name + '/image'),
                 ('camera_info', name + '/camera_info'),
             ],
+            # remappings=[
+            #     ('image_rect', '/image_raw'),
+            #     ('camera_info', '/camera_info'),
+            # ],
             parameters=cfg_params
         ),
 ])

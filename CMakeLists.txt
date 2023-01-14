@@ -39,6 +39,7 @@ find_package(apriltag_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(apriltag 3.2 REQUIRED)
@@ -71,6 +72,7 @@ install(PROGRAMS
 install(DIRECTORY
   calibration
   src
+  cfg
   launch
   DESTINATION share/${PROJECT_NAME}/
 )

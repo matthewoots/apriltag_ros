@@ -1,4 +1,47 @@
-# AprilTag ROS2 Node
+# AprilTag ROS2 Node (Crazyflie Gap8 streamer)
+
+This is a fork of `apriltag_ros` to use with crazyflie's onboard camera
+
+**CREATE WORKSPACE FOR CF**
+```bash
+cd
+mkdir -p ~/crazyswarm2_ws/src
+```
+
+**CAMERA CALIBRATION**
+```bash
+cd
+sudo apt install ros-galactic-camera-calibration-parsers ros-galactic-camera-info-manager ros-galactic-launch-testing-ament-cmake 
+mkdir -p ros2_calibration_ws/src
+cd ros2_calibration_ws/src/
+git clone -b galactic git@github.com:ros-perception/image_pipeline.git
+cd ..
+colcon build --symlink-install
+source install/setup.bash
+# get topic name (usually if you use cf_camera.py ns would be cfX)
+# get the calibration file that I use for this config in the calibration folder (Checkerboard-A4-25mm-10x7.svg)
+ros2 run camera_calibration cameracalibrator --size 10x7 --square 0.025 --ros-args -r image:=/cfX/image -p camera:=/camera
+# replace cfX with uav number
+```
+
+**PACKAGE DEPENDENCIES**
+```bash
+cd ~/crazyswarm2_ws/src
+git clone git@github.com:matthewoots/apriltag_msgs.git --branch crazyflie
+git clone git@github.com:matthewoots/apriltag_ros.git --branch crazyflie
+sudo apt-get install -y \
+ros-galactic-apriltag \
+libboost-program-options-dev \
+libusb-1.0-0-dev
+pip3 install rowan
+git clone git@github.com:matthewoots/crazyswarm2.git --branch crazyflie --recursive
+git clone --branch ros2 --recursive https://github.com/IMRCLab/motion_capture_tracking.git
+cd ..
+colcon build --symlink-install
+source install/setup.bash
+```
+
+
 
 This ROS2 node uses the AprilTag library to detect AprilTags in images and publish their pose, id and additional metadata.
 
