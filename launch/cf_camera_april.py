@@ -18,14 +18,14 @@ def generate_launch_description():
     with open(calibration_yaml, 'r') as ymlfile:
         calibration = yaml.safe_load(ymlfile)
 
-    # load ip and port from crazyflie
-    crazyflies_yaml = os.path.join(
-        get_package_share_directory('crazyflie'),
-        'config',
-        'crazyflies.yaml')
+    # load ip and port from wifi.config
+    wifi_yaml = os.path.join(
+        get_package_share_directory('apriltag_ros'),
+        'cfg',
+        'wifi_setup.yaml')
     
-    with open(crazyflies_yaml, 'r') as ymlfile:
-        crazyflies = yaml.safe_load(ymlfile)
+    with open(wifi_yaml, 'r') as ymlfile:
+        wifi = yaml.safe_load(ymlfile)
     
     # load apriltag
     cfg_yaml = os.path.join(
@@ -35,7 +35,7 @@ def generate_launch_description():
     with open(cfg_yaml, 'r') as ymlfile:
         cfg = yaml.safe_load(ymlfile)
 
-    calib_params = [calibration] + [crazyflies]
+    calib_params = [calibration] + [wifi]
     cfg_params = [cfg]
 
     return LaunchDescription([

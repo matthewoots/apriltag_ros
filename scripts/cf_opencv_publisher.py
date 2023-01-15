@@ -56,7 +56,15 @@ def main(args=None):
 
     minimal_publisher.get_logger().info("Connecting to socket on " + ip + ":" + str(port))
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((ip, port))
+    client_socket.settimeout(2)
+
+    while True:
+        try:
+            client_socket.connect((ip, port))
+            break
+        except socket.error as error:
+            minimal_publisher.get_logger().error("Connection Failed, Retrying..")
+            time.sleep(1)
     minimal_publisher.get_logger().info("Socket connected")
 
     start = time.time()
