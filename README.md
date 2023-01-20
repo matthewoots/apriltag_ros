@@ -41,6 +41,12 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+**LAUNCH**
+```bash
+# Inside crazyswarm2 there is a config file called crazyflies.yaml = Set your ip add and port there
+ros2 launch apriltag_ros cf_camera.py
+ros2 launch apriltag_ros cf_camera_april.py
+```
 
 
 This ROS2 node uses the AprilTag library to detect AprilTags in images and publish their pose, id and additional metadata.

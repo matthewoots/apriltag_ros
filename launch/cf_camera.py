@@ -4,37 +4,42 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from yaml.loader import SafeLoader
 
 def generate_launch_description():
-
-    name = "cf1"
-
-    # load calibration
-    calibration_yaml = os.path.join(
-        get_package_share_directory('apriltag_ros'),
-        'calibration',
-        name + '.yaml')
     
-    with open(calibration_yaml, 'r') as ymlfile:
-        calibration = yaml.safe_load(ymlfile)
+    # load ip and port from crazyflies.yaml
+    crazyflies_yaml = os.path.join(
+        get_package_share_directory('crazyflie'),
+        'config',
+        'crazyflies.yaml')
     
-   # load ip and port from wifi.config
-    wifi_yaml = os.path.join(
-        get_package_share_directory('apriltag_ros'),
-        'cfg',
-        'wifi_setup.yaml')
-    
-    with open(wifi_yaml, 'r') as ymlfile:
-        wifi = yaml.safe_load(ymlfile)
+    with open(crazyflies_yaml, 'r') as ymlfile:
+        cf = yaml.safe_load(ymlfile)
 
-    calib_params = [calibration] + [wifi]
+    robots_list = cf['robots']
 
-    return LaunchDescription([
-        Node(
-            package="apriltag_ros",
-            executable="cf_opencv_publisher.py",
-            name='cf_streamer',
-            output="screen",
-            parameters=calib_params
-        ),
-])
+    ld = LaunchDescription()
+
+    for x in robots_list.keys():
+        # load calibration
+        calibration_yaml = os.path.join(
+            get_package_share_directory('apriltag_ros'),
+            'calibration',
+            x + '.yaml')
+        
+        with open(calibration_yaml, 'r') as ymlfile:
+            calibration = yaml.safe_load(ymlfile)
+        
+        calib_params = [calibration] + [cf]
+        
+        camera_node = Node(
+                package="apriltag_ros",
+                executable="cf_opencv_publisher.py",
+                name='cf_streamer_' + x,
+                output="screen",
+                parameters=calib_params
+            )
+        ld.add_action(camera_node)
+
+    return ld
