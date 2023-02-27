@@ -13,12 +13,16 @@ from sensor_msgs.msg import CameraInfo
 
 class cf_image_publisher(Node):
 
+    def __del__(self):
+        self.client_socket.close()
+
     def __init__(self):
         super().__init__(
             "cf_image_publisher",
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True,
         )
+        self.client_socket = socket.socket()
         # Turn ROS parameters into a dictionary
         self._ros_parameters = self._param_to_dict(self._parameters)
         self.name = self._ros_parameters['camera_name']
@@ -55,16 +59,18 @@ def main(args=None):
     port = minimal_publisher._ros_parameters['robots'][minimal_publisher.name]['port']
 
     minimal_publisher.get_logger().info("Connecting to socket on " + ip + ":" + str(port))
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.settimeout(2)
+    minimal_publisher.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    minimal_publisher.client_socket.connect((ip, port))
 
-    while True:
-        try:
-            client_socket.connect((ip, port))
-            break
-        except socket.error as error:
-            minimal_publisher.get_logger().error("Connection Failed, Retrying..")
-            time.sleep(1)
+    # client_socket.settimeout(8)
+
+    # while True:
+    #     try:
+    #         client_socket.connect((ip, port))
+    #         break
+    #     except socket.error as error:
+    #         minimal_publisher.get_logger().error("Connection Failed, Retrying..")
+    #         time.sleep(1)
     minimal_publisher.get_logger().info("Socket connected")
 
     start = time.time()
@@ -92,10 +98,10 @@ def main(args=None):
 
     while(1):
         # First get the info
-        packetInfoRaw = rx_bytes(4, client_socket)
+        packetInfoRaw = rx_bytes(4, minimal_publisher.client_socket)
         [length, routing, function] = struct.unpack('<HBB', packetInfoRaw)
 
-        imgHeader = rx_bytes(length - 2, client_socket)
+        imgHeader = rx_bytes(length - 2, minimal_publisher.client_socket)
         [magic, width, height, depth, format, size] = struct.unpack('<BHHBBI', imgHeader)
 
         cam_info.header.stamp = minimal_publisher.get_clock().now().to_msg()
@@ -111,10 +117,10 @@ def main(args=None):
             imgStream = bytearray()
 
             while len(imgStream) < size:
-                packetInfoRaw = rx_bytes(4, client_socket)
+                packetInfoRaw = rx_bytes(4, minimal_publisher.client_socket)
                 [length, dst, src] = struct.unpack('<HBB', packetInfoRaw)
                 #print("Chunk size is {} ({:02X}->{:02X})".format(length, src, dst))
-                chunk = rx_bytes(length - 2, client_socket)
+                chunk = rx_bytes(length - 2, minimal_publisher.client_socket)
                 imgStream.extend(chunk)
             
             count = count + 1
@@ -124,7 +130,7 @@ def main(args=None):
 
             # if format == 0:
             bayer_img = np.frombuffer(imgStream, dtype=np.uint8)   
-            bayer_img.shape = (324, 324)
+            bayer_img.shape = (244, 324)
             cv_image = bridge.cv2_to_imgmsg(bayer_img, 'mono8')
             cv_image.header.stamp = cam_info.header.stamp
             minimal_publisher.publisher_.publish(cv_image)
