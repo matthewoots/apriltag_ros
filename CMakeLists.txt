@@ -46,13 +46,18 @@ find_package(apriltag 3.2 REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(ament_cmake REQUIRED)
 
+include_directories(include
+  ${EIGEN3_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+)
+
 add_library(tags OBJECT src/tag_functions.cpp)
 target_link_libraries(tags apriltag::apriltag)
 set_property(TARGET tags PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_library(AprilTagNode SHARED src/AprilTagNode.cpp)
 ament_target_dependencies(AprilTagNode rclcpp rclcpp_components sensor_msgs apriltag_msgs tf2_ros image_transport cv_bridge)
-target_link_libraries(AprilTagNode apriltag::apriltag tags Eigen3::Eigen)
+target_link_libraries(AprilTagNode ${OpenCV_LIBRARIES} apriltag::apriltag tags Eigen3::Eigen)
 rclcpp_components_register_node(AprilTagNode PLUGIN "AprilTagNode" EXECUTABLE "apriltag_node")
 
 ament_environment_hooks(${ament_cmake_package_templates_ENVIRONMENT_HOOK_LIBRARY_PATH})
