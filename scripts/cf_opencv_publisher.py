@@ -62,19 +62,16 @@ def main(args=None):
     minimal_publisher.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     minimal_publisher.client_socket.connect((ip, port))
 
-    # client_socket.settimeout(8)
+    # minimal_publisher.client_socket.settimeout(8)
 
     # while True:
     #     try:
-    #         client_socket.connect((ip, port))
+    #         minimal_publisher.client_socket.connect((ip, port))
     #         break
     #     except socket.error as error:
     #         minimal_publisher.get_logger().error("Connection Failed, Retrying..")
     #         time.sleep(1)
     minimal_publisher.get_logger().info("Socket connected")
-
-    start = time.time()
-    count = 0
 
     cam_info = CameraInfo()
     cam_info.width = minimal_publisher._ros_parameters['image_width']
@@ -96,7 +93,12 @@ def main(args=None):
     for i in range(len(rectification_mats)):
         cam_info.r[i] = rectification_mats[i]
 
+    max_length = 15
+    time_array = []
+    previous = time.time()
+
     while(1):
+
         # First get the info
         packetInfoRaw = rx_bytes(4, minimal_publisher.client_socket)
         [length, routing, function] = struct.unpack('<HBB', packetInfoRaw)
@@ -122,11 +124,24 @@ def main(args=None):
                 #print("Chunk size is {} ({:02X}->{:02X})".format(length, src, dst))
                 chunk = rx_bytes(length - 2, minimal_publisher.client_socket)
                 imgStream.extend(chunk)
+
+            ratePerImage = 1 / ((time.time()-previous))
+
+            time_array.append(ratePerImage)
+
+            while (len(time_array) > max_length):
+                time_array.pop(0)
             
-            count = count + 1
-            meanTimePerImage = (time.time()-start) / count
-            # minimal_publisher.get_logger().info("meanTimePerImage " + str(meanTimePerImage))
-            # print("{}".format(1/meanTimePerImage))
+            moving_average = 0.0
+            for i in range(len(time_array)):
+                moving_average = moving_average + time_array[i]
+            
+            moving_average = moving_average/len(time_array)
+
+            # minimal_publisher.get_logger().info("ratePerImage " + str(meanTimePerImage))
+            minimal_publisher.get_logger().info("ratePerImage " + str(moving_average))
+
+            # print("{}".format(1/ratePerImage))
 
             # if format == 0:
             bayer_img = np.frombuffer(imgStream, dtype=np.uint8)   
@@ -134,6 +149,12 @@ def main(args=None):
             cv_image = bridge.cv2_to_imgmsg(bayer_img, 'mono8')
             cv_image.header.stamp = cam_info.header.stamp
             minimal_publisher.publisher_.publish(cv_image)
+
+            previous = time.time()
+        else:
+            minimal_publisher.get_logger().info("no image")
+        
+        
 
 if __name__ == "__main__":
     main()

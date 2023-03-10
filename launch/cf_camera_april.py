@@ -57,6 +57,7 @@ def generate_launch_description():
                 remappings=[
                     ('image_rect', x + '/image'),
                     ('camera_info', x + '/camera_info'),
+                    ('detections', x + '/tag'),
                 ],
                 # remappings=[
                 #     ('image_rect', '/image_raw'),

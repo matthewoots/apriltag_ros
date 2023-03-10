@@ -261,6 +261,8 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     declare_parameter("detector.refine", td->refine_edges, descr("snap to strong gradients"));
     declare_parameter("detector.sharpening", td->decode_sharpening, descr("sharpening of decoded images"));
     declare_parameter("detector.debug", td->debug, descr("write additional debugging images to working directory"));
+    declare_parameter("detector.min_cluster_pixels", td->qtp.min_cluster_pixels, descr("reject quads containing too few pixels"));
+    declare_parameter("detector.critical_rad", td->qtp.critical_rad, descr("Reject quads where pairs of edges have angles that are close to straight or close to 180 degrees"));
 
     declare_parameter("max_hamming", 0, descr("reject detections with more corrected bits than allowed"));
     declare_parameter("profile", false, descr("print profiling information to stdout"));
@@ -341,18 +343,6 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
         // reject detections with more corrected bits than allowed
         if(det->hamming > max_hamming) { continue; }
 
-        std::vector<cv::Point3d> standaloneTagObjectPoints;
-        std::vector<cv::Point2d> standaloneTagImagePoints;
-        double tag_half_size = tag_edge_size / 2.0;
-        addObjectPoints(tag_half_size, cv::Matx44d::eye(), standaloneTagObjectPoints);
-        addImagePoints(det, standaloneTagImagePoints);
-
-        // RCLCPP_DEBUG(get_logger(),
-        //     "detection %3d: id (%2dx%2d)-%-4d, hamming %d, margin %8.3f camera_matrix %.2lf %.2lf %.2lf %.2lf tag_size %lf\n",
-        //     i, det->family->nbits, det->family->h, det->id,
-        //     det->hamming, det->decision_margin, msg_ci->k[0], 
-        //     msg_ci->k[2], msg_ci->k[4], msg_ci->k[5], tag_half_size);
-
         // detection
         apriltag_msgs::msg::AprilTagDetection msg_detection;
         msg_detection.family = std::string(det->family->name);
@@ -367,6 +357,12 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
         
         if (use_opencv_pnp)
         {
+            std::vector<cv::Point3d> standaloneTagObjectPoints;
+            std::vector<cv::Point2d> standaloneTagImagePoints;
+            double tag_half_size = tag_edge_size / 2.0;
+            addObjectPoints(tag_half_size, cv::Matx44d::eye(), standaloneTagObjectPoints);
+            addImagePoints(det, standaloneTagImagePoints);
+
             Eigen::Matrix4d transform;
             transform = getRelativeTransform(
                 standaloneTagObjectPoints, standaloneTagImagePoints, 
@@ -425,6 +421,8 @@ AprilTagNode::onParameter(const std::vector<rclcpp::Parameter>& parameters)
         IF("detector.refine", td->refine_edges)
         IF("detector.sharpening", td->decode_sharpening)
         IF("detector.debug", td->debug)
+        IF("detector.min_cluster_pixels", td->qtp.min_cluster_pixels)
+        IF("detector.critical_rad", td->qtp.critical_rad)
         IF("max_hamming", max_hamming)
         IF("profile", profile)
     }
