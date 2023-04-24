@@ -36,3 +36,4 @@ calibration/*
 # calibration
 !calibration/cf1.yaml
 !calibration/Checkerboard-A4-25mm-10x7.svg
+!calibration/calibration_2-25.zip
